@@ -6,7 +6,7 @@
         <package android:name="dev.finall.rearcardbridge" />
         <provider android:authorities="dev.finall.rearcardbridge.update" />
     </queries>
-    <application android:allowBackup="false" android:label="舞萌背屏" android:supportsRtl="true" android:theme="@style/Theme.MaiProfile">
+    <application android:allowBackup="false" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher" android:label="舞萌背屏" android:supportsRtl="true" android:theme="@style/Theme.MaiProfile">
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
         </activity>
