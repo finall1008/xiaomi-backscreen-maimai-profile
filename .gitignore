@@ -4,5 +4,6 @@
 local.properties
 *.jks
 *.keystore
+/signing/
 .dsh/
 .DS_Store

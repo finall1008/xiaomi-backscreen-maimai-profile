@@ -11,6 +11,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.finall.maiprofile.bridge.RearCardBridgeClient
 import dev.finall.maiprofile.ui.ProfileScreen
 import java.io.File
 
@@ -29,9 +30,11 @@ class MainActivity : ComponentActivity() {
         pendingExport = null
     }
     private val bridge = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        RearCardBridgeClient(this).recordForegroundResult(result.data)
         val status = result.data?.getStringExtra("status")
         if (status != null) model.setStatus(when(status) {
             "SAVED" -> "内容已保存"
+            "BINDING_REQUIRED" -> "内容已暂存，请在背屏卡片桥完成绑定"
             "CARRIER_WRITTEN" -> "载体已写入，请完成首次绑定"
             "SETTINGS_OPENED" -> "背屏设置已打开"
             else -> result.data?.getStringExtra("message") ?: "桥接操作已结束"
@@ -45,7 +48,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val state = model.state.collectAsStateWithLifecycle().value
             ProfileScreen(state, model::saveSettings, model::refreshPublic, model::refreshFull, model::checkIn,
-                onPublish = { model.preparePackage(::sendToBridge) },
+                onPublish = { model.publish(::sendToBridge) },
                 onExport = { model.preparePackage { pendingExport = it; exportFile.launch("maimai-card.zip") } },
                 onDismissError = model::dismissError)
         }
@@ -59,8 +62,9 @@ class MainActivity : ComponentActivity() {
             setDataAndType(uri, "application/zip")
             clipData = ClipData.newRawUri("舞萌背屏卡片", uri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            putExtra("api_version", 1)
-            putExtra("request_id", "maimai-${System.currentTimeMillis()}")
+            putExtra("api_version", 2)
+            putExtra("request_id", RearCardBridgeClient.requestId())
+            putExtra("key", RearCardBridgeClient.KEY)
         }
         try { bridge.launch(intent) } catch (_: ActivityNotFoundException) {
             model.reportError("请先安装背屏卡片桥")

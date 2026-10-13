@@ -3,6 +3,7 @@ package dev.finall.maiprofile
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import dev.finall.maiprofile.bridge.RearCardBridgeClient
 import dev.finall.maiprofile.card.CardPackageBuilder
 import dev.finall.maiprofile.data.ProfileRepository
 import dev.finall.maiprofile.model.*
@@ -16,6 +17,7 @@ import java.io.File
 class ProfileViewModel(app: Application) : AndroidViewModel(app) {
     private val repository = ProfileRepository(app)
     private val builder = CardPackageBuilder(app)
+    private val bridgeClient = RearCardBridgeClient(app)
     private val mutable = MutableStateFlow(AppUiState(profile = repository.profile(), settings = repository.settings()))
     val state = mutable.asStateFlow()
     init {
@@ -28,9 +30,10 @@ class ProfileViewModel(app: Application) : AndroidViewModel(app) {
             val settings = repository.settings()
             mutable.update { it.copy(settings = settings, profile = repository.profile()) }
             if (settings.autoRefresh && settings.publicQq.isNotBlank() &&
-                System.currentTimeMillis() - repository.profile().publicUpdatedAt >= 60 * 60 * 1000) {
+                System.currentTimeMillis() - repository.profile().publicUpdatedAt >= settings.refreshIntervalMinutes * 60L * 1000) {
                 val p = repository.refreshPublic()
                 mutable.update { it.copy(profile = p, status = "公开资料已刷新") }
+                updateRearScreenIfConfigured(p)
             }
             refreshPreview()
         }
@@ -43,6 +46,7 @@ class ProfileViewModel(app: Application) : AndroidViewModel(app) {
             if (settings.autoRefresh && settings.publicQq.isNotBlank()) {
                 val refreshed = repository.refreshPublic()
                 mutable.update { it.copy(profile = refreshed, status = "公开资料已刷新") }
+                updateRearScreenIfConfigured(refreshed)
             }
             refreshPreview()
         }
@@ -64,6 +68,22 @@ class ProfileViewModel(app: Application) : AndroidViewModel(app) {
     fun preparePackage(onReady: (File) -> Unit) = operation {
         val file = builder.export(repository.profile())
         onReady(file)
+    }
+    fun publish(onBindingRequired: (File) -> Unit) = operation {
+        val file = builder.export(repository.profile())
+        if (!bridgeClient.isConfigured()) {
+            onBindingRequired(file)
+        } else {
+            val result = bridgeClient.update(file)
+            if (result.getString("status") == "BINDING_REQUIRED") onBindingRequired(file)
+            else mutable.update { it.copy(status = "内容已保存") }
+        }
+    }
+    private suspend fun updateRearScreenIfConfigured(profile: PlayerProfile) {
+        if (!bridgeClient.isConfigured()) return
+        val result = bridgeClient.update(builder.export(profile))
+        mutable.update { it.copy(status = if (result.getString("status") == "SAVED")
+            "公开资料已刷新，背屏内容已保存" else "公开资料已刷新，请手动发送并重新绑定背屏") }
     }
     fun dismissError() { mutable.update { it.copy(error = null) } }
     fun reportError(message: String) { mutable.update { it.copy(error = message) } }

@@ -20,6 +20,7 @@ data class AppSettings(
     val publicQq: String = "",
     val gatewayToken: String = "",
     val autoRefresh: Boolean = true,
+    val refreshIntervalMinutes: Int = 60,
 )
 
 data class AppUiState(

@@ -28,6 +28,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -69,8 +70,10 @@ fun ProfileScreen(
     var publicQq by remember(state.settings.publicQq) { mutableStateOf(state.settings.publicQq) }
     var gatewayToken by remember(state.settings.gatewayToken) { mutableStateOf(state.settings.gatewayToken) }
     var autoRefresh by remember(state.settings.autoRefresh) { mutableStateOf(state.settings.autoRefresh) }
+    var refreshInterval by remember(state.settings.refreshIntervalMinutes) { mutableStateOf(state.settings.refreshIntervalMinutes.toString()) }
     var showFullQuery by remember { mutableStateOf(false) }
     var fullQuery by remember { mutableStateOf("") }
+    val uriHandler = LocalUriHandler.current
     val themeController = remember { ThemeController(colorSchemeMode = ColorSchemeMode.System) }
     val canDeliver = !state.busy && (!state.previewUrl.isNullOrBlank() || state.profile.hasContent())
     MiuixTheme(controller = themeController) {
@@ -154,8 +157,8 @@ fun ProfileScreen(
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                         )
                         BasicComponent(
-                            title = "自动刷新公开资料",
-                            summary = "每小时读取查分器已同步的数据 · 免费",
+                            title = "后台自动更新背屏",
+                            summary = "免费读取公开资料并发送到背屏 · 需先手动绑定",
                             enabled = !state.busy,
                             endActions = {
                                 Switch(
@@ -165,6 +168,15 @@ fun ProfileScreen(
                                 )
                             },
                         )
+                        TextField(
+                            value = refreshInterval,
+                            onValueChange = { refreshInterval = it },
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 12.dp),
+                            label = "刷新间隔（分钟，至少 15）",
+                            singleLine = true,
+                            enabled = !state.busy,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        )
                         Button(
                             onClick = {
                                 onSaveSettings(
@@ -172,6 +184,7 @@ fun ProfileScreen(
                                         publicQq = publicQq.trim(),
                                         gatewayToken = gatewayToken.trim(),
                                         autoRefresh = autoRefresh,
+                                        refreshIntervalMinutes = refreshInterval.toIntOrNull() ?: 0,
                                     ),
                                 )
                             },
@@ -179,6 +192,25 @@ fun ProfileScreen(
                             colors = ButtonDefaults.buttonColorsPrimary(),
                             enabled = !state.busy,
                         ) { Text("保存") }
+                    }
+                }
+                item {
+                    Card(Modifier.fillMaxWidth()) {
+                        BasicComponent(title = "致谢与数据来源", summary = "感谢以下服务提供数据与接口")
+                        BasicComponent(
+                            title = "AWMC NET.",
+                            summary = "公开昵称、Rating 和游玩次数 · net.wmc.pub",
+                            onClick = { uriHandler.openUri("https://net.wmc.pub/") },
+                        )
+                        BasicComponent(
+                            title = "AWMC API",
+                            summary = "完整资料查询、签到与额度管理 · api.wmc.pub",
+                            onClick = { uriHandler.openUri("https://api.wmc.pub/") },
+                        )
+                        Text(
+                            text = "本项目是基于上述接口开发的第三方背屏展示工具。接口使用规则与计费以服务提供方的说明为准。",
+                            modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 16.dp),
+                        )
                     }
                 }
             }

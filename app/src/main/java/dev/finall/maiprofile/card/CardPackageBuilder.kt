@@ -21,25 +21,36 @@ class CardPackageBuilder(private val context: Context) {
     private val root = File(context.filesDir, "cards").apply { mkdirs() }
 
     suspend fun preview(profile: PlayerProfile): String = withContext(Dispatchers.IO) {
-        val dir = create(profile, true)
-        // Retain the active and previous preview, rather than accumulating one folder per refresh.
-        root.listFiles().orEmpty().filter { it.isDirectory && it.name.startsWith("preview-") }
-            .sortedByDescending { it.lastModified() }.drop(2).forEach { it.deleteRecursively() }
-        "https://appassets.androidplatform.net/cards/${dir.name}/index.html"
+        synchronized(buildLock) {
+            val dir = create(profile, true)
+            // Retain the active and previous preview, rather than accumulating one folder per refresh.
+            root.listFiles().orEmpty().filter { it.isDirectory && it.name.startsWith("preview-") }
+                .sortedByDescending { it.lastModified() }.drop(2).forEach { it.deleteRecursively() }
+            "https://appassets.androidplatform.net/cards/${dir.name}/index.html"
+        }
     }
 
-    suspend fun export(profile: PlayerProfile): File = withContext(Dispatchers.IO) {
-        val dir = create(profile, false)
-        val target = File(context.cacheDir, "published/maimai-card.zip").apply { parentFile!!.mkdirs() }
-        ZipOutputStream(target.outputStream().buffered()).use { zip ->
-            // All rendering images are carried inside the script. No carrier file refresh is needed.
-            dir.listFiles().orEmpty().filter { it.name == "index.html" || it.name == "main.js" }.forEach { file ->
-                zip.putNextEntry(ZipEntry(file.relativeTo(dir).invariantSeparatorsPath))
-                file.inputStream().use { it.copyTo(zip) }
-                zip.closeEntry()
+    suspend fun export(profile: PlayerProfile, background: Boolean = false): File = withContext(Dispatchers.IO) {
+        synchronized(buildLock) {
+            val dir = create(profile, false)
+            // The worker must not overwrite a ZIP still being read by the foreground bridge.
+            val filename = if (background) "maimai-card-background.zip" else "maimai-card.zip"
+            val target = File(context.cacheDir, "published/$filename").apply { parentFile!!.mkdirs() }
+            ZipOutputStream(target.outputStream().buffered()).use { zip ->
+                // All rendering images are carried inside the script. No carrier file refresh is needed.
+                dir.listFiles().orEmpty().filter { it.name == "index.html" || it.name == "main.js" }.forEach { file ->
+                    zip.putNextEntry(ZipEntry(file.relativeTo(dir).invariantSeparatorsPath))
+                    file.inputStream().use { it.copyTo(zip) }
+                    zip.closeEntry()
+                }
             }
+            target
         }
-        target
+    }
+
+    companion object {
+        // Preview and background export share the resource cache and package directory.
+        private val buildLock = Any()
     }
 
     private fun create(profile: PlayerProfile, preview: Boolean): File {

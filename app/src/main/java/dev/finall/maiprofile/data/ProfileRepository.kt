@@ -11,13 +11,21 @@ import java.net.URL
 
 class ProfileRepository(context: Context) {
     private val prefs = context.getSharedPreferences("profile", Context.MODE_PRIVATE)
-    fun settings() = AppSettings(prefs.getString("qq", "").orEmpty(), prefs.getString("gateway_token", "").orEmpty(), prefs.getBoolean("auto", true))
+    fun settings() = AppSettings(
+        publicQq = prefs.getString("qq", "").orEmpty(),
+        gatewayToken = prefs.getString("gateway_token", "").orEmpty(),
+        autoRefresh = prefs.getBoolean("auto", true),
+        refreshIntervalMinutes = prefs.getInt("refresh_interval_minutes", prefs.getInt("refresh_interval_hours", 1) * 60),
+    )
     fun saveSettings(settings: AppSettings) {
         require(settings.publicQq.isEmpty() || settings.publicQq.all { it.isDigit() }) { "请输入正确的 QQ 号" }
+        require(settings.refreshIntervalMinutes >= 15) { "刷新间隔至少为 15 分钟" }
         val qq = settings.publicQq.trim()
         val previousQq = prefs.getString("qq", "").orEmpty()
         val edit = prefs.edit().putString("qq", qq).putString("gateway_token", settings.gatewayToken.trim())
             .putBoolean("auto", settings.autoRefresh)
+            .putInt("refresh_interval_minutes", settings.refreshIntervalMinutes)
+            .remove("refresh_interval_hours")
         if (previousQq.isNotBlank() && previousQq != qq) edit.remove("player")
         edit.apply()
     }
