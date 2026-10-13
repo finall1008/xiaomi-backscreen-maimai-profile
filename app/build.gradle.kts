@@ -20,33 +20,53 @@ android {
     // Always use the owner's key for both variants; never fall back to a debug key.
     val finallKeystore = rootProject.file("signing/finall.jks")
     check(finallKeystore.isFile) { "Missing signing/finall.jks; refusing to use a different key." }
-    val signingProperties = Properties().apply {
-        rootProject.file("signing/signing.properties").inputStream().use { load(it) }
-    }
-    val keychainService = signingProperties.getProperty("keychainService")
-    val keychainAccount = signingProperties.getProperty("keychainAccount")
-    check(!keychainService.isNullOrBlank() && !keychainAccount.isNullOrBlank()) {
-        "Configure keychainService and keychainAccount in signing/signing.properties."
-    }
-    val keychain = providers.exec {
-        commandLine("/usr/bin/security", "find-generic-password",
-            "-s", keychainService, "-a", keychainAccount, "-w")
-        isIgnoreExitValue = true
-    }
-    check(keychain.result.get().exitValue == 0) {
-        "Cannot read finall signing password from macOS Keychain; refusing to use a different key."
-    }
-    val password = keychain.standardOutput.asText.get().trimEnd('\r', '\n')
-    check(password.isNotEmpty()) { "The finall signing password is empty." }
-    val finall = signingConfigs.create("finall") {
-        storeFile = finallKeystore
-        storePassword = password
-        keyAlias = "finall"
-        keyPassword = password
-    }
-    buildTypes {
-        debug { signingConfig = finall }
-        release { signingConfig = finall; isMinifyEnabled = false }
+    val isCi = providers.environmentVariable("CI").map(String::toBoolean).getOrElse(false)
+    if (isCi) {
+        // CI: the workflow restores signing/finall.jks from secrets and passes the
+        // alias/password via environment. Anything missing fails the build.
+        fun ciProperty(name: String): String =
+            requireNotNull(providers.environmentVariable(name).orNull?.takeIf { it.isNotBlank() }) {
+                "Missing $name environment variable for CI signing; refusing to use a different signing key."
+            }
+        val finall = signingConfigs.create("finall") {
+            storeFile = finallKeystore
+            storePassword = ciProperty("RELEASE_STORE_PASSWORD")
+            keyAlias = ciProperty("RELEASE_KEY_ALIAS")
+            keyPassword = ciProperty("RELEASE_KEY_PASSWORD")
+        }
+        buildTypes {
+            debug { signingConfig = finall }
+            release { signingConfig = finall; isMinifyEnabled = false }
+        }
+    } else {
+        val signingProperties = Properties().apply {
+            rootProject.file("signing/signing.properties").inputStream().use { load(it) }
+        }
+        val keychainService = signingProperties.getProperty("keychainService")
+        val keychainAccount = signingProperties.getProperty("keychainAccount")
+        check(!keychainService.isNullOrBlank() && !keychainAccount.isNullOrBlank()) {
+            "Configure keychainService and keychainAccount in signing/signing.properties."
+        }
+        val keychain = providers.exec {
+            commandLine("/usr/bin/security", "find-generic-password",
+                "-s", keychainService, "-a", keychainAccount, "-w")
+            isIgnoreExitValue = true
+        }
+        check(keychain.result.get().exitValue == 0) {
+            "Cannot read finall signing password from macOS Keychain; refusing to use a different key."
+        }
+        val password = keychain.standardOutput.asText.get().trimEnd('\r', '\n')
+        check(password.isNotEmpty()) { "The finall signing password is empty." }
+        val finall = signingConfigs.create("finall") {
+            storeFile = finallKeystore
+            storePassword = password
+            keyAlias = "finall"
+            keyPassword = password
+        }
+        buildTypes {
+            debug { signingConfig = finall }
+            release { signingConfig = finall; isMinifyEnabled = false }
+        }
     }
 }
 kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) } }
