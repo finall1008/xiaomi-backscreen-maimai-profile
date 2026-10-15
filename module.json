@@ -1,0 +1,10 @@
+{
+  "id": "dev.finall.maiprofile",
+  "name": "舞萌背屏",
+  "version": "1.0.3",
+  "versionCode": 4,
+  "apiVersion": 2,
+  "description": "舞萌玩家资料卡，支持下拉免费刷新和主屏资料设置。",
+  "author": "finall1008",
+  "capabilities": ["network", "storage", "files"]
+}

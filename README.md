@@ -1,78 +1,95 @@
 # 舞萌背屏
 
-Android / Kotlin App，包名 `dev.finall.maiprofile`。UI 使用 Miuix Compose 0.9.4 标准组件，卡片由本地 HTML + 经典 JavaScript Canvas 分层绘制。
+[背屏卡片桥](https://github.com/finall1008/rear-card-bridge) API 2 应用卡模块，不再是独立 Android App。模块包含背屏 QuickJS / Canvas 卡片和主屏 WebUI。设置页通过 WebView 的 `fetch` 直接联网；背屏通过 `bridge.net` 联网；两端通过卡片桥共享配置和缓存。
 
-## 使用
+## 安装与使用
 
-1. 填写 AWMCNET 公开成绩账号的 QQ 号，保存。默认开启公开 API 自动刷新。
-2. 可选填写 AWMC 网关 `gw_` 长期令牌。点击「每日签到」获取服务端发放的额度；已经签到会显示「今日已签到」。
-3. 点击「更新完整资料 · 2 Token」，输入二维码内容、图片链接或二维码网页地址，确认查询。客户端只拦截空输入，并保留已验证的官方图片链接转换；其余格式交由上游校验。它读取当前头像、姓名框、背景、称号、段位和阶级。
-4. 首次点击「发送到背屏」，通过背屏卡片桥 v2 前台界面配置并绑定动态载体，在系统设置中重新应用一次。绑定后，手动发送和后台自动刷新均使用 v2 后台接口保存最新内容；背屏休眠时在点亮后载入。
-5. 也可「导出卡片」保存 ZIP。
+需要支持卡片模块及 **WebUI 直接联网** 的卡片桥（`feature/card-modules-webui` 分支 `17b42d4` 或后续版本）。设置页不再依赖原生网络后端，也不回退到 `bridge.net`。
 
-## 刷新与计费
+1. 在桥中选择「安装 ZIP 模块」，导入 Release 的 `MaimaiRearProfile-v版本号.zip`；也可输入本 Git 仓库地址安装。
+2. 在桥中选择扫描出的本地卡片作为载体，完成绑定后，到系统背屏设置移除旧卡并重新应用。不硬编码替换目标。
+3. 打开模块设置，填写 AWMCNET 公开账号 QQ，保存。默认开启免费自动刷新，间隔 60 分钟，可设为不少于 15 的整数分钟。
+4. 可选保存 AWMC 网关 `gw_` 长期令牌。在主屏点击「每日签到」领取服务端额度；已签到显示「今日已签到」。
+5. 需要头像、姓名框、背景、称号、段位和阶级时，在主屏点击「更新完整资料 · 2 Token」，填写本次二维码内容、图片链接或网页地址并确认。
+6. 背屏右侧可视区域**下拉达到阈值后松手**，立即免费刷新。短拖动、横向滑动、取消手势不触发请求；刷新中不能重复触发。背屏不设菜单、付费按钮或签到按钮。
 
-- 免费读取：`GET https://net.wmc.pub/api/player/{QQ}`。读取 AWMCNET 最近同步的昵称、Rating、游玩次数，不会访问官方游戏服务器拉取新成绩。需要账号公开资料可访问。
-- 默认自动刷新：间隔为 60 分钟，可在「刷新间隔」设置为不少于 15 的整数分钟（WorkManager 最小周期为 15 分钟）。旧版本保存的小时设置会自动换算为分钟。打开 App 时超过所设间隔则读取公开接口；WorkManager 在有网络时按所设间隔安排后台免费刷新并发送到背屏，关闭 App 后仍可调度，实际执行时间由 Android / 省电策略决定。修改间隔会更新现有任务，关闭「后台自动更新背屏」会取消任务。
-- 完整资料：`POST https://api.wmc.pub/v1/user/data`，仅点击并确认时调用，成功消耗 2 Token；不自动重试或作为公开接口失败后的兜底。
-- 签到：`POST https://api.wmc.pub/checkin`，仅点击签到时调用。奖励数量以服务端结果为准。
-- 公开刷新保留完整资料缓存中的装饰字段，公共接口的空 `plate` 不覆盖当前姓名框。
-- 自动刷新先更新 App 内缓存；首次手动绑定成功后，将生成的 ZIP 通过桥接后台 API 保存为新的内容版本。尚未绑定时只刷新缓存，不自动打开桥接界面。桥接中恢复原卡、取消绑定后，需再次手动发送以重新配置。后台失败会记录日志，留待下次定时执行，不调用付费接口。
+没有宿主 bridge 时，页面显示“未连接卡片桥”，操作按钮禁用。
+
+### 从旧 APK 切换
+
+旧 App 的私有设置与缓存不会自动转入模块。需重新填写 QQ、令牌，完整资料仍由用户主动确认查询。模块不会卸载旧 App、取消它的任务或自动接管背屏绑定；切换时请自行关闭旧 App 的后台更新，避免继续维护旧卡片。
+
+## 刷新、计费与缓存
+
+- 免费资料：`GET https://net.wmc.pub/api/player/{QQ}`，读取 AWMCNET 最近同步的昵称、Rating、游玩次数，不访问官方游戏服务器拉取新成绩。账号需允许公开访问。
+- 完整资料：`POST https://api.wmc.pub/v1/user/data`，只在主屏确认后调用，成功消耗 2 Token。保留已验证的官方图片链接转换，其余非空二维码输入交上游校验。
+- 签到：`POST https://api.wmc.pub/checkin`，只在主屏手动调用，奖励以服务端结果为准。
+- 设置页的公开资料、完整查询、签到及图片下载都直接使用 WebView `fetch`。完整查询通过 `AbortController` 设置 180 秒客户端总等待时间（包括响应体读取），其余请求默认 15 秒；不代理到原生 `ModuleBackend`。
+- 付费请求不自动重试，也不作为免费接口失败的兜底。请求超时或连接中断时结果可能未知，请先核对服务端状态，避免重复扣费。服务端返回的 HTTP 504 不会因改用 `fetch` 而保证消失。
+- 免费刷新只更新昵称、Rating、游玩次数和公开更新时间，不覆盖完整资料缓存中的装饰字段。切换 QQ 后不沿用旧账号资料。
+- 数据失败保留已有缓存。完整资料查询成功但素材下载失败会单独提示；可以重新准备素材，不重复调用付费查询。
+- 背屏脚本启动、设置页打开时检查数据时间戳。背屏运行期间每 30 秒检查是否到达所设间隔；免费请求失败后按所设间隔再尝试，不每 30 秒重试。
+- **休眠期间不执行 JS**。恢复执行后检查实际时间戳，过期再查；没有 WorkManager、后台服务或精确定时保证。关闭自动刷新不影响手动下拉刷新。
+- 主屏保存的数据通过 `bridge.card.requestRefresh()` 通知卡片重读缓存。保存成功不等于背屏已执行，休眠时显示可能延后。
+
+## 图片与绘制
+
+沿用原有 912×596 设计坐标、左侧镜头避让、顶部完整姓名框、中央资料和底部称号。背景原亮度，资料底板为 55% 不透明度白色。只有公开资料时，不假造头像、姓名框、背景或段位。
+
+- 卡片是 QuickJS / Canvas，不是完整网页。首屏、图片回调、手势动画和数据变化都从 `requestAnimationFrame` 发布画面；静止时没有永久 RAF 循环。
+- 触摸仅使用 `pointerdown/move/up/cancel` 等指针事件，绘制与手势共用坐标；滑动取消不会当成点击。
+- Rating 底板、数字、称号底板随模块预先缩放。主屏 WebUI 下载动态图片，用 Canvas 保持比例缩放且不放大原图：背景 WebP 质量 90，其余透明素材 PNG。
+- 动态图片逐张以 Data URL 文本缓存在 `bridge.files`，背屏读取缓存，不合成整张 PNG、不在每帧下载或解码图片。文字不必等待全部图片加载。
+- 配置、业务数据和动态图片改变不需要重新应用。**包内静态资源改变**需在桥中更新载体，再到系统移除旧卡并重新应用；脚本更新可热加载。
+
+## 数据与隐私
+
+模块 ID 固定为 `dev.finall.maiprofile`，`apiVersion` 为 2，声明 `network`、`storage`、`files` 三项能力。
+
+- `bridge.config`：公开 QQ、自动刷新开关与间隔。
+- `bridge.storage`：网关令牌、账号对应的资料与更新时间；背屏免费刷新代码不读取令牌。
+- `bridge.files`：按素材类型及 ID 保存处理后的动态图片。
+- 二维码仅用于本次查询，不存入配置、缓存、日志或发布包。
+- 令牌只保存在桥的模块私有数据中，不进入发布 ZIP 或日志；这里没有额外的加密保险箱。
+- 同模块 ID 更新保留配置与业务数据，`versionCode` 必须严格递增。卸载模块会删除该模块的数据。
+
+设置页第一个脚本引用 `bridge-shim.js`，由宿主提供，不随模块固定旧版本。它只负责配置、存储、文件和卡片联动，不承担设置页网络请求。两端共用资料和绘制源码，构建时复制各自需要的静态资源。
+
+## 开发与发布
+
+需要 Node.js 22.18+、Python 3（仅打 ZIP，使用标准库）。构建依赖只有 Babel 的 async-to-generator 插件，不需要 Android SDK、Gradle 或签名密钥。
+
+```sh
+npm ci
+npm test
+npm run build
+npm run build:check
+npm run pack
+```
+
+构建输出为 [card](<card/>) 与 [webroot](<webroot/>)，需要随源码提交，保证桥可从 Git 仓库直接安装。背屏宿主不执行原生 Promise 任务，构建会把 `card/main.js` 的 async/await 编译成生成器，交给桥运行时驱动；设置页不编译。发布包位于 `dist/MaimaiRearProfile-v<版本>.zip`；ZIP 根目录直接包含模块清单，不多套文件夹。
+
+- [模块清单](<module.json>)：模块 ID、版本和能力声明。
+- [共享资料服务](<src/shared/profile.js>)：资料解析、接口与缓存。
+- [共享绘制](<src/shared/render.js>)：主屏预览与背屏画面。
+- [下拉手势](<src/shared/pull-refresh.js>)、[背屏入口](<src/card.js>)。
+- [设置页入口](<src/webui.js>)、[直接网络请求](<src/webui-network.js>)、[设置页 HTML](<webroot/index.html>)、[样式](<webroot/styles.css>)。
+- [构建脚本](<scripts/build.mjs>)、[打包脚本](<scripts/pack.py>)。
+
+修改源码后执行 `npm run build`。发布时同时更新模块清单及 npm 包版本，递增 `versionCode`；Git tag 使用 `v` 加版本号。CI 执行业务测试、检查已提交产物并发布模块 ZIP，不再生成 APK，也不读取签名 secrets。
+
+### 验证范围
+
+Node 测试覆盖资料合并、账号切换、二维码转换、计费请求边界、手势判定及 RAF 绘制时机。浏览器预览只能验证布局和普通网页交互，不能证明 QuickJS 宿主的画面发布、触摸及休眠恢复行为。真机安装、系统重新应用及付费查询需另行授权验证。
 
 ## 致谢与数据来源
 
-感谢 [AWMC NET.](https://net.wmc.pub/) 和
-[AWMC API](https://api.wmc.pub/) 提供的数据与接口服务：
-
-- **AWMC NET.**：提供公开玩家资料，包括昵称、Rating 和游玩次数。
-- **AWMC API**：提供完整玩家资料查询及签到、额度管理服务。
-
-本项目是基于上述接口开发的第三方背屏展示工具。
-接口使用规则与计费以服务提供方的说明为准。
-
-## 卡片与素材
-
-Android 下载并缓存原始素材，将当前绘制需要的图片缩放、编码为脚本配置中的 Base64 Data URL，然后打包 `index.html` 和 `main.js`；不合成整张 PNG。背景用 WebP（质量 90），透明 UI 素材用 PNG，均保留比例且不放大原图。头像、姓名框、背景、Rating 底板、数字、称号和段位素材都随脚本更新，不依赖载体内的图片文件。JS 决定坐标、文字、裁切和素材组合。
-
-- 912×596 画布，核心内容避让左侧 296 px。
-- 顶部完整姓名框，中间放大资料，底部完整称号。
-- 背景原亮度；资料底板为 55% 不透明度白色，上下内边距 22 px。
-- Rating 底板使用 PRiSM PLUS 风格高清原始资源，颜色按 Rating 档位选择；数字来自 CN1.56 更新包。
-- 不把浏览器完整 DOM 当作背屏运行时；实际为 MAML / QuickJS / Canvas。
-- 首次只有公开资料时，不假造账号的头像、姓名框和背景。完整查询后才显示真实装饰。
+感谢 [AWMC NET.](https://net.wmc.pub/) 提供公开玩家资料，以及 [AWMC API](https://api.wmc.pub/) 提供完整资料查询、签到与额度服务。本项目为第三方展示工具，接口使用与计费以服务方说明为准。
 
 素材来源：
+
 - [落雪公开资源文档](https://maimai.lxns.net/docs/api/maimai#游戏资源)：头像、姓名框、背景及称号元数据。
-- [maimaiDX 项目](https://github.com/Yuri-YuzuChaN/maimaiDX)：CN1.55 资源包中的 PRiSM PLUS Rating 背景和 CN1.56 数字更新包。
+- [maimaiDX](https://github.com/Yuri-YuzuChaN/maimaiDX)：PRiSM PLUS Rating 背景和 CN1.56 数字资源。
 - [官方 NET](https://maimaidx.jp/maimai-mobile/img/trophy_normal.png)：普通称号底板。
 
 原始游戏素材版权归相应权利人所有。
-
-## 与背屏卡片桥的接口
-
-需要支持 v2 的背屏卡片桥。前后台统一使用 `api_version=2`、唯一 `request_id` 和固定 `key=maimai-profile`，分组不随 QQ 设置变化。
-
-首次手动发送使用 Activity Result 启动 `dev.finall.rearcardbridge.action.UPDATE_CONTENT`，通过 FileProvider 传递 ZIP、ClipData 和临时读取权限；桥接 Activity 退出后记录该 key 的绑定结果。`BINDING_REQUIRED` 表示已暂存、尚需绑定。
-
-已绑定后的手动发送及自动刷新在 IO 线程调用 `content://dev.finall.rearcardbridge.update` 的 `update_content`，显式授予 ZIP 读取权限并在调用结束后撤销。`SAVED` 显示「内容已保存」，不等同于背屏已执行。后台遇到 `BINDING_REQUIRED` 不弹出界面；手动发送遇到该结果则转到前台配置。首次配置需要 Shizuku；日常更新不需要 Shizuku、通知或前台服务，也不跳转系统卡片页。
-
-网关令牌仅存应用私有设置，禁用 Android 备份；二维码仅用于本次查询，不写入设置、日志或卡片包。导出的包没有网关令牌。
-
-## Data URL 验证
-
-在连接手机的独立 shell 进程中调用同一套原生 QuickJS Canvas 库，PNG Data URL 的像素检查通过。随后由实际 APK 的打包代码生成 ZIP，再验证其中全部 15 张 PNG / WebP 图片的 Data URL 加载和绘制，检查通过；测试包约 258 KiB，脚本配置约 340 KiB。
-
-完整整卡的独立进程绘制探针触发字体初始化断言，重试进程被终止，因此尚未验证载体上的完整热更新流程。测试没有修改当前背屏卡片，手机上的临时探针已清理。
-
-## 构建
-
-需要 Android SDK 37 和 JDK 17+（本机 JDK 21）：
-
-Debug 和 Release 始终使用仓库相对路径 [signing/finall.jks](<signing/finall.jks>) 中的 `finall` 签名，不使用默认 debug key。密码仅从 macOS 钥匙串读取；本机 [signing/signing.properties](<signing/signing.properties>) 配置 `keychainService` 和 `keychainAccount`，不存储密码。整个 `signing/` 目录被 Git 忽略，密钥和本机配置不随源码发布。构建前需自行准备这些本机文件；缺失或钥匙串不可访问时直接失败，不切换签名。
-
-```sh
-./gradlew :app:assembleDebug :app:assembleRelease
-adb install -r app/build/outputs/apk/release/app-release.apk
-```
-
-输出：`app/build/outputs/apk/debug/app-debug.apk` 和 `app/build/outputs/apk/release/app-release.apk`。安装必须使用 `adb install -r` 覆盖保留数据，不能通过卸载绕过签名冲突。

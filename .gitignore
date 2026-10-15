@@ -7,3 +7,6 @@ local.properties
 /signing/
 .dsh/
 .DS_Store
+/dist/
+node_modules/
+__pycache__/
