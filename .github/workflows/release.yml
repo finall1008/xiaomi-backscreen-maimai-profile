@@ -50,3 +50,29 @@ jobs:
         with:
           files: dist/*.zip
           generate_release_notes: true
+
+      - name: Check module shop credentials
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          MODULE_STORE_TOKEN: ${{ secrets.MODULE_STORE_TOKEN }}
+        run: |
+          test -n "$MODULE_STORE_TOKEN" || { echo "::error::Set MODULE_STORE_TOKEN with Contents read/write access to finall1008/rear-card-modules"; exit 1; }
+
+      - name: Checkout module shop publisher
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/checkout@v5
+        with:
+          repository: finall1008/rear-card-modules
+          ref: main
+          path: _module-store
+          token: ${{ secrets.MODULE_STORE_TOKEN }}
+          persist-credentials: false
+
+      - name: Update module shop
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          MODULE_STORE_TOKEN: ${{ secrets.MODULE_STORE_TOKEN }}
+        run: |
+          python3 _module-store/scripts/publish-module.py \
+            "dist/MaimaiRearProfile-${GITHUB_REF_NAME}.zip" \
+            --repository "$GITHUB_REPOSITORY" --tag "$GITHUB_REF_NAME"
