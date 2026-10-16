@@ -33,6 +33,7 @@ async function bundle(sources, output, { compile = false } = {}) {
 }
 await bundle(['src/shared/profile.js', 'src/shared/render.js', 'src/shared/pull-refresh.js', 'src/card.js'], 'card/main.js', { compile: true });
 await bundle(['src/shared/profile.js', 'src/shared/render.js', 'src/webui-network.js', 'src/webui.js'], 'webroot/main.js');
+await bundle(['src/shared/profile.js', 'src/background.js'], 'background/main.js');
 outputs.set('card/index.html', await read('src/card.html'));
 for (const name of (await readdir(path.join(root, 'src/assets'))).sort()) {
   const bytes = await read('src/assets/' + name);

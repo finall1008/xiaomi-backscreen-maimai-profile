@@ -3,12 +3,12 @@
 /*
  * 舞萌背屏卡片模块 · 共享资料服务。
  *
- * 设置页（webroot）与背屏卡片（card）共用同一套业务规则：配置、业务存储、
+ * 设置页（webroot）、背屏卡片（card）与后台（background）共用同一套业务规则：配置、业务存储、
  * 公开/完整资料查询、签到和动态图片缓存。经典脚本 IIFE，浏览器与背屏宿主
  * 通过 globalThis.MaiProfile 访问；Node 下可 require 用于测试。
  *
  * 数据分布（与模块开发指南一致）：
- *   config.settings  -> { publicQq, autoRefresh, refreshIntervalMinutes }  两端可读，随配置通知
+ *   config.settings  -> { publicQq }  三端可读，随配置通知
  *   storage.gatewayToken -> 网关令牌，独立键；只有设置页会读取
  *   storage.profile  -> 玩家资料 + account（所属 QQ）
  *   files cache/images/<kind>-<id>.txt -> 逐张 Data URL 文本（<= 512 KiB 读取限制）
@@ -31,8 +31,6 @@
   var FULL_TIMEOUT_MS = 180000;
   /** bridge.files.readText 的上限；每张缓存文本必须能读回来。 */
   var MAX_CACHE_BYTES = 512 * 1024;
-  var MIN_INTERVAL_MINUTES = 15;
-  var DEFAULT_INTERVAL_MINUTES = 60;
 
   var IMAGE_KINDS = ['icon', 'plate', 'frame', 'course', 'class'];
   /** 资料字段 -> 图片缓存键。 */
@@ -130,13 +128,7 @@
 
   function normalizeSettings(value) {
     var raw = value && typeof value === 'object' ? value : {};
-    var interval = toInt(raw.refreshIntervalMinutes, 0);
-    if (interval <= 0) interval = DEFAULT_INTERVAL_MINUTES;
-    return {
-      publicQq: toText(raw.publicQq, ''),
-      autoRefresh: raw.autoRefresh !== false,
-      refreshIntervalMinutes: interval
-    };
+    return { publicQq: toText(raw.publicQq, '') };
   }
 
   /** 与旧 App 的 QQ 输入规则一致：空或全数字。 */
@@ -146,15 +138,6 @@
 
   function validateQq(qq) {
     if (qq !== '' && !/^[0-9]+$/.test(qq)) throw new Error('请输入正确的 QQ 号');
-  }
-
-  /** 必须是 >= 15 的整数分钟；字符串输入（表单）同样校验，不做静默取整。 */
-  function parseInterval(value) {
-    var minutes = typeof value === 'number' ? value : Number(toText(value, '').trim());
-    if (!isFinite(minutes) || Math.floor(minutes) !== minutes || minutes < MIN_INTERVAL_MINUTES) {
-      throw new Error('刷新间隔至少为 ' + MIN_INTERVAL_MINUTES + ' 分钟，且必须为整数');
-    }
-    return minutes;
   }
 
   /**
@@ -183,16 +166,6 @@
     return merged;
   }
 
-  /** 设置页与卡片共用的到期判断（按真实时间戳）。 */
-  function isRefreshDue(settings, profile, atTime) {
-    var config = normalizeSettings(settings);
-    if (!config.autoRefresh || config.publicQq === '') return false;
-    var updatedAt = toInt(normalizeProfile(profile).publicUpdatedAt, 0);
-    if (updatedAt <= 0) return true;
-    var stamp = atTime === undefined || atTime === null ? now() : toInt(atTime, now());
-    return stamp - updatedAt >= config.refreshIntervalMinutes * 60000;
-  }
-
   function apiMessage(body) {
     if (typeof body !== 'string' || body.trim() === '') return '';
     var parsed;
@@ -218,7 +191,7 @@
 
   function createRepository(bridge, request) {
     if (!bridge || typeof bridge !== 'object') throw new Error('未连接卡片桥');
-    // 设置页传入 fetch 请求函数；只有背屏默认使用 bridge.net。
+    // 设置页传入 fetch 请求函数；背屏与后台默认使用 bridge.net。
     if (request === undefined) {
       if (!bridge.net || typeof bridge.net.request !== 'function') throw new Error('卡片桥不可用：缺少背屏网络接口');
       request = function (options) { return bridge.net.request(options); };
@@ -272,7 +245,7 @@
       return headers;
     }
 
-    /** config.settings：两端共享，不含令牌。 */
+    /** config.settings：三端共享，不含令牌。 */
     async function getCardSettings() {
       var raw = await bridge.config.get(CONFIG_KEY);
       return normalizeSettings(raw);
@@ -302,30 +275,24 @@
     }
 
     /**
-     * 设置页保存。校验 QQ 与间隔；换号时清掉旧账号资料（只清资料，不触发任何付费接口）。
+     * 设置页保存。校验 QQ；换号时清掉旧账号资料（只清资料，不触发任何付费接口）。
      */
     async function saveSettings(settings) {
       var input = settings && typeof settings === 'object' ? settings : {};
       var qq = normalizeQq(input.publicQq);
       validateQq(qq);
-      var interval = parseInterval(input.refreshIntervalMinutes);
       var token = toText(input.gatewayToken, '').trim();
-      var autoRefresh = input.autoRefresh !== false;
 
       var previous = await getCardSettings();
       if (previous.publicQq !== qq) await bridge.storage.remove(PROFILE_KEY);
       await bridge.config.set(CONFIG_KEY, {
-        publicQq: qq,
-        autoRefresh: autoRefresh,
-        refreshIntervalMinutes: interval
+        publicQq: qq
       });
       await bridge.storage.set(TOKEN_KEY, token);
 
       return {
         publicQq: qq,
-        gatewayToken: token,
-        autoRefresh: autoRefresh,
-        refreshIntervalMinutes: interval
+        gatewayToken: token
       };
     }
 
@@ -562,7 +529,6 @@
     normalizeSettings: normalizeSettings,
     mergePublicProfile: mergePublicProfile,
     parseOfficialQr: parseOfficialQr,
-    isRefreshDue: isRefreshDue,
     imageUrl: imageUrl,
     cachePath: cachePath,
     configKey: CONFIG_KEY,
@@ -573,9 +539,7 @@
     imageSpecs: IMAGE_SPECS,
     imageIdFields: IMAGE_ID_FIELDS,
     fullTimeoutMs: FULL_TIMEOUT_MS,
-    maxCacheBytes: MAX_CACHE_BYTES,
-    minIntervalMinutes: MIN_INTERVAL_MINUTES,
-    defaultIntervalMinutes: DEFAULT_INTERVAL_MINUTES
+    maxCacheBytes: MAX_CACHE_BYTES
   };
 
   global.MaiProfile = api;
@@ -788,7 +752,7 @@
  *
  * 责任划分：
  *   设置页：保存设置、公开刷新、完整资料查询（2 Token）、签到、动态图片处理与预览。
- *   卡片：显示缓存、运行期间的免费刷新；设置页写入后调用 bridge.card.requestRefresh() 通知它。
+ *   卡片：显示缓存、下拉手动免费刷新；设置页写入后调用 bridge.card.requestRefresh() 通知它。
  */
 (function () {
   'use strict';
@@ -832,8 +796,6 @@
     dom.fullConfirm = byId('full-confirm');
     dom.setQq = byId('set-qq');
     dom.setToken = byId('set-token');
-    dom.setAuto = byId('set-auto');
-    dom.setInterval = byId('set-interval');
     dom.save = byId('save');
     dom.actionButtons = [dom.refreshPublic, dom.openFull, dom.checkIn, dom.retryAssets, dom.fullConfirm, dom.fullCancel, dom.save];
   }
@@ -890,7 +852,7 @@
     dom.actionButtons.forEach(function (button) {
       if (button) button.disabled = locked;
     });
-    [dom.setQq, dom.setToken, dom.setAuto, dom.setInterval].forEach(function (input) {
+    [dom.setQq, dom.setToken].forEach(function (input) {
       if (input) input.disabled = locked;
     });
   }
@@ -922,8 +884,6 @@
     if (dom.setQq) dom.setQq.value = settings.publicQq || '';
     // 令牌只写入输入框，不写日志、不放进页面文本。
     if (dom.setToken) dom.setToken.value = settings.gatewayToken || '';
-    if (dom.setAuto) dom.setAuto.checked = settings.autoRefresh !== false;
-    if (dom.setInterval) dom.setInterval.value = String(settings.refreshIntervalMinutes || api.defaultIntervalMinutes);
   }
 
   /* ---------- 预览组件（由构建产物提供 window.MaiRenderer） ---------- */
@@ -1055,14 +1015,6 @@
     return ok;
   }
 
-  async function autoRefreshIfDue() {
-    if (!state.repository) return false;
-    var settings = state.settings || (await state.repository.getSettings());
-    if (!api.isRefreshDue(settings, state.profile)) return false;
-    setStatus('正在刷新公开资料…');
-    return refreshPublic();
-  }
-
   async function refreshFull(qr) {
     return runAction('正在查询完整资料…', async function () {
       var profile = await state.repository.refreshFull(qr);
@@ -1115,9 +1067,7 @@
     if (state.busy || !state.repository) return false;
     var input = {
       publicQq: dom.setQq ? dom.setQq.value : '',
-      gatewayToken: dom.setToken ? dom.setToken.value : '',
-      autoRefresh: dom.setAuto ? dom.setAuto.checked : true,
-      refreshIntervalMinutes: dom.setInterval ? dom.setInterval.value : ''
+      gatewayToken: dom.setToken ? dom.setToken.value : ''
     };
     var ok = await runAction('正在保存设置…', async function () {
       var saved = await state.repository.saveSettings(input);
@@ -1129,7 +1079,6 @@
       renderPreview();
       await saveAndNotifySaved('设置已保存', '设置已保存，背屏通知失败');
     });
-    if (ok) await autoRefreshIfDue();
     return ok;
   }
 
@@ -1229,8 +1178,6 @@
         setStatus('资料加载失败');
         return;
       }
-      // 设置页打开时按到期规则自动读取公开资料（完整查询与签到始终手动）。
-      await autoRefreshIfDue();
     })();
   }
 

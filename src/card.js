@@ -1,10 +1,10 @@
-/* Rear-screen entry: cached profile, due public refresh, and pull-to-refresh only. */
+/* Rear-screen entry: cached profile and manual pull-to-refresh only. */
 (function (root) {
   'use strict';
   function start(canvas, bridge) {
     if (root.__maiCardDispose) root.__maiCardDispose();
     var renderer = root.MaiRenderer.create(canvas, { assetBase: 'assets/' });
-    var dead = false, busy = false, loadRevision = 0, lastAttemptAt = 0, clearMessage = null;
+    var dead = false, busy = false, loadRevision = 0, clearMessage = null;
     if (!bridge) {
       renderer.setRefreshState({ message: '未连接卡片桥' });
       root.__maiCardDispose = renderer.dispose;
@@ -33,7 +33,6 @@
     async function refresh() {
       if (dead || busy) return;
       busy = true;
-      lastAttemptAt = Date.now();
       renderer.setRefreshState({ busy: true, message: '' });
       try {
         await repository.refreshPublic();
@@ -47,19 +46,6 @@
         if (!dead) renderer.setRefreshState({ busy: false });
       }
     }
-    async function checkDue() {
-      if (dead || busy) return;
-      try {
-        var settings = await repository.getCardSettings();
-        if (dead || busy || !settings.autoRefresh || !settings.publicQq) return;
-        var profile = await repository.getProfile();
-        if (dead || busy) return;
-        var last = Math.max(profile.publicUpdatedAt || 0, lastAttemptAt);
-        if (Date.now() - last >= settings.refreshIntervalMinutes * 60000) await refresh();
-      } catch (error) {
-        if (!dead) message(error.message || '读取刷新设置失败');
-      }
-    }
     var detach = root.MaiPullRefresh.attach(canvas, {
       size: renderer.size,
       canRefresh: function () { return !dead && !busy; },
@@ -71,13 +57,10 @@
     });
     bridge.config.onChange(function () {
       if (dead) return;
-      lastAttemptAt = 0;
-      loadCache().then(checkDue).catch(function (error) { message(error.message || '读取配置失败'); });
+      loadCache().catch(function (error) { message(error.message || '读取配置失败'); });
     });
-    var timer = root.setInterval(checkDue, 30000);
     function dispose() {
       dead = true; ++loadRevision;
-      root.clearInterval(timer);
       if (clearMessage !== null) root.clearTimeout(clearMessage);
       detach(); renderer.dispose();
     }
@@ -86,7 +69,7 @@
     // last known profile synchronously before any bridge round trip.
     var snapshot = bridge.card.readSnapshot();
     if (snapshot && snapshot.profile) renderer.setProfile(snapshot.profile, snapshot.images || {});
-    loadCache().then(checkDue).catch(function (error) { message(error.message || '读取资料失败'); });
+    loadCache().catch(function (error) { message(error.message || '读取资料失败'); });
     return { dispose: dispose, refresh: refresh };
   }
   if (typeof module !== 'undefined' && module.exports) module.exports = { start: start };

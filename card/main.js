@@ -5,12 +5,12 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
 /*
  * 舞萌背屏卡片模块 · 共享资料服务。
  *
- * 设置页（webroot）与背屏卡片（card）共用同一套业务规则：配置、业务存储、
+ * 设置页（webroot）、背屏卡片（card）与后台（background）共用同一套业务规则：配置、业务存储、
  * 公开/完整资料查询、签到和动态图片缓存。经典脚本 IIFE，浏览器与背屏宿主
  * 通过 globalThis.MaiProfile 访问；Node 下可 require 用于测试。
  *
  * 数据分布（与模块开发指南一致）：
- *   config.settings  -> { publicQq, autoRefresh, refreshIntervalMinutes }  两端可读，随配置通知
+ *   config.settings  -> { publicQq }  三端可读，随配置通知
  *   storage.gatewayToken -> 网关令牌，独立键；只有设置页会读取
  *   storage.profile  -> 玩家资料 + account（所属 QQ）
  *   files cache/images/<kind>-<id>.txt -> 逐张 Data URL 文本（<= 512 KiB 读取限制）
@@ -32,8 +32,6 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
   var FULL_TIMEOUT_MS = 180000;
   /** bridge.files.readText 的上限；每张缓存文本必须能读回来。 */
   var MAX_CACHE_BYTES = 512 * 1024;
-  var MIN_INTERVAL_MINUTES = 15;
-  var DEFAULT_INTERVAL_MINUTES = 60;
   var IMAGE_KINDS = ['icon', 'plate', 'frame', 'course', 'class'];
   /** 资料字段 -> 图片缓存键。 */
   var IMAGE_ID_FIELDS = {
@@ -146,12 +144,8 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
   }
   function normalizeSettings(value) {
     var raw = value && typeof value === 'object' ? value : {};
-    var interval = toInt(raw.refreshIntervalMinutes, 0);
-    if (interval <= 0) interval = DEFAULT_INTERVAL_MINUTES;
     return {
-      publicQq: toText(raw.publicQq, ''),
-      autoRefresh: raw.autoRefresh !== false,
-      refreshIntervalMinutes: interval
+      publicQq: toText(raw.publicQq, '')
     };
   }
 
@@ -161,15 +155,6 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
   }
   function validateQq(qq) {
     if (qq !== '' && !/^[0-9]+$/.test(qq)) throw new Error('请输入正确的 QQ 号');
-  }
-
-  /** 必须是 >= 15 的整数分钟；字符串输入（表单）同样校验，不做静默取整。 */
-  function parseInterval(value) {
-    var minutes = typeof value === 'number' ? value : Number(toText(value, '').trim());
-    if (!isFinite(minutes) || Math.floor(minutes) !== minutes || minutes < MIN_INTERVAL_MINUTES) {
-      throw new Error('刷新间隔至少为 ' + MIN_INTERVAL_MINUTES + ' 分钟，且必须为整数');
-    }
-    return minutes;
   }
 
   /**
@@ -197,16 +182,6 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
     merged.publicUpdatedAt = toInt(updatedAt, 0);
     return merged;
   }
-
-  /** 设置页与卡片共用的到期判断（按真实时间戳）。 */
-  function isRefreshDue(settings, profile, atTime) {
-    var config = normalizeSettings(settings);
-    if (!config.autoRefresh || config.publicQq === '') return false;
-    var updatedAt = toInt(normalizeProfile(profile).publicUpdatedAt, 0);
-    if (updatedAt <= 0) return true;
-    var stamp = atTime === undefined || atTime === null ? now() : toInt(atTime, now());
-    return stamp - updatedAt >= config.refreshIntervalMinutes * 60000;
-  }
   function apiMessage(body) {
     if (typeof body !== 'string' || body.trim() === '') return '';
     var parsed;
@@ -230,7 +205,7 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
   }
   function createRepository(bridge, request) {
     if (!bridge || typeof bridge !== 'object') throw new Error('未连接卡片桥');
-    // 设置页传入 fetch 请求函数；只有背屏默认使用 bridge.net。
+    // 设置页传入 fetch 请求函数；背屏与后台默认使用 bridge.net。
     if (request === undefined) {
       if (!bridge.net || typeof bridge.net.request !== 'function') throw new Error('卡片桥不可用：缺少背屏网络接口');
       request = function (options) {
@@ -293,7 +268,7 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
       return headers;
     }
 
-    /** config.settings：两端共享，不含令牌。 */
+    /** config.settings：三端共享，不含令牌。 */
     function getCardSettings() {
       return _getCardSettings.apply(this, arguments);
     }
@@ -341,7 +316,7 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
       return _writeProfile.apply(this, arguments);
     }
     /**
-     * 设置页保存。校验 QQ 与间隔；换号时清掉旧账号资料（只清资料，不触发任何付费接口）。
+     * 设置页保存。校验 QQ；换号时清掉旧账号资料（只清资料，不触发任何付费接口）。
      */
     function _writeProfile() {
       _writeProfile = _asyncToGenerator(function* (profile) {
@@ -362,22 +337,16 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
         var input = settings && typeof settings === 'object' ? settings : {};
         var qq = normalizeQq(input.publicQq);
         validateQq(qq);
-        var interval = parseInterval(input.refreshIntervalMinutes);
         var token = toText(input.gatewayToken, '').trim();
-        var autoRefresh = input.autoRefresh !== false;
         var previous = yield getCardSettings();
         if (previous.publicQq !== qq) yield bridge.storage.remove(PROFILE_KEY);
         yield bridge.config.set(CONFIG_KEY, {
-          publicQq: qq,
-          autoRefresh: autoRefresh,
-          refreshIntervalMinutes: interval
+          publicQq: qq
         });
         yield bridge.storage.set(TOKEN_KEY, token);
         return {
           publicQq: qq,
-          gatewayToken: token,
-          autoRefresh: autoRefresh,
-          refreshIntervalMinutes: interval
+          gatewayToken: token
         };
       });
       return _saveSettings.apply(this, arguments);
@@ -656,7 +625,6 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
     normalizeSettings: normalizeSettings,
     mergePublicProfile: mergePublicProfile,
     parseOfficialQr: parseOfficialQr,
-    isRefreshDue: isRefreshDue,
     imageUrl: imageUrl,
     cachePath: cachePath,
     configKey: CONFIG_KEY,
@@ -667,9 +635,7 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
     imageSpecs: IMAGE_SPECS,
     imageIdFields: IMAGE_ID_FIELDS,
     fullTimeoutMs: FULL_TIMEOUT_MS,
-    maxCacheBytes: MAX_CACHE_BYTES,
-    minIntervalMinutes: MIN_INTERVAL_MINUTES,
-    defaultIntervalMinutes: DEFAULT_INTERVAL_MINUTES
+    maxCacheBytes: MAX_CACHE_BYTES
   };
   global.MaiProfile = api;
 
@@ -1016,7 +982,7 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
 })(typeof window !== 'undefined' ? window : globalThis);
 ;
 // src/card.js
-/* Rear-screen entry: cached profile, due public refresh, and pull-to-refresh only. */
+/* Rear-screen entry: cached profile and manual pull-to-refresh only. */
 (function (root) {
   'use strict';
 
@@ -1028,7 +994,6 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
     var dead = false,
       busy = false,
       loadRevision = 0,
-      lastAttemptAt = 0,
       clearMessage = null;
     if (!bridge) {
       renderer.setRefreshState({
@@ -1079,7 +1044,6 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
       _refresh = _asyncToGenerator(function* () {
         if (dead || busy) return;
         busy = true;
-        lastAttemptAt = Date.now();
         renderer.setRefreshState({
           busy: true,
           message: ''
@@ -1100,25 +1064,6 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
       });
       return _refresh.apply(this, arguments);
     }
-    function checkDue() {
-      return _checkDue.apply(this, arguments);
-    }
-    function _checkDue() {
-      _checkDue = _asyncToGenerator(function* () {
-        if (dead || busy) return;
-        try {
-          var settings = yield repository.getCardSettings();
-          if (dead || busy || !settings.autoRefresh || !settings.publicQq) return;
-          var profile = yield repository.getProfile();
-          if (dead || busy) return;
-          var last = Math.max(profile.publicUpdatedAt || 0, lastAttemptAt);
-          if (Date.now() - last >= settings.refreshIntervalMinutes * 60000) yield refresh();
-        } catch (error) {
-          if (!dead) message(error.message || '读取刷新设置失败');
-        }
-      });
-      return _checkDue.apply(this, arguments);
-    }
     var detach = root.MaiPullRefresh.attach(canvas, {
       size: renderer.size,
       canRefresh: function () {
@@ -1138,16 +1083,13 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
     });
     bridge.config.onChange(function () {
       if (dead) return;
-      lastAttemptAt = 0;
-      loadCache().then(checkDue).catch(function (error) {
+      loadCache().catch(function (error) {
         message(error.message || '读取配置失败');
       });
     });
-    var timer = root.setInterval(checkDue, 30000);
     function dispose() {
       dead = true;
       ++loadRevision;
-      root.clearInterval(timer);
       if (clearMessage !== null) root.clearTimeout(clearMessage);
       detach();
       renderer.dispose();
@@ -1157,7 +1099,7 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
     // last known profile synchronously before any bridge round trip.
     var snapshot = bridge.card.readSnapshot();
     if (snapshot && snapshot.profile) renderer.setProfile(snapshot.profile, snapshot.images || {});
-    loadCache().then(checkDue).catch(function (error) {
+    loadCache().catch(function (error) {
       message(error.message || '读取资料失败');
     });
     return {

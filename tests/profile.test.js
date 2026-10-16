@@ -102,7 +102,7 @@ function jsonRoute(value) {
 }
 
 function seededSettings(overrides = {}) {
-  return Object.assign({ publicQq: '123456', autoRefresh: true, refreshIntervalMinutes: 60 }, overrides);
+  return Object.assign({ publicQq: '123456' }, overrides);
 }
 
 function decoratedProfile(overrides = {}) {
@@ -175,11 +175,9 @@ test('换号清理旧资料，且不拼接两位玩家的数据', async () => {
 
   const saved = await repository.saveSettings({
     publicQq: '654321',
-    gatewayToken: 'gw_new',
-    autoRefresh: false,
-    refreshIntervalMinutes: 30
+    gatewayToken: 'gw_new'
   });
-  assert.deepEqual(saved, { publicQq: '654321', gatewayToken: 'gw_new', autoRefresh: false, refreshIntervalMinutes: 30 });
+  assert.deepEqual(saved, { publicQq: '654321', gatewayToken: 'gw_new' });
   assert.equal('profile' in fake.storage, false, '换号后旧资料必须清除');
 
   const blank = await repository.getProfile();
@@ -201,21 +199,13 @@ test('缓存所属 QQ 与设置不一致时返回空资料', async () => {
   assert.equal(profile.account, '999999');
 });
 
-test('设置校验拒绝非数字 QQ 与小于 15 的间隔，配置里不含令牌', async () => {
+test('设置校验拒绝非数字 QQ，配置里不含令牌或旧版调度设置', async () => {
   const fake = createFakeBridge({ config: {}, storage: {} });
   const repository = MaiProfile.createRepository(fake.bridge);
 
   await assert.rejects(
-    () => repository.saveSettings({ publicQq: '12a34', refreshIntervalMinutes: 60 }),
+    () => repository.saveSettings({ publicQq: '12a34' }),
     /请输入正确的 QQ 号/
-  );
-  await assert.rejects(
-    () => repository.saveSettings({ publicQq: '123456', refreshIntervalMinutes: 10 }),
-    /刷新间隔至少为 15 分钟/
-  );
-  await assert.rejects(
-    () => repository.saveSettings({ publicQq: '123456', refreshIntervalMinutes: 20.5 }),
-    /刷新间隔至少为 15 分钟/
   );
 
   await repository.saveSettings({
@@ -224,20 +214,18 @@ test('设置校验拒绝非数字 QQ 与小于 15 的间隔，配置里不含令
     autoRefresh: true,
     refreshIntervalMinutes: 15
   });
-  assert.deepEqual(fake.config.settings, { publicQq: '123456', autoRefresh: true, refreshIntervalMinutes: 15 });
+  assert.deepEqual(fake.config.settings, { publicQq: '123456' });
   assert.equal(fake.storage.gatewayToken, 'gw_token');
   assert.equal(JSON.stringify(fake.config).includes('gw_token'), false, '配置对象中不允许出现令牌');
 
   const settings = await repository.getSettings();
   assert.equal(settings.gatewayToken, 'gw_token');
   assert.equal(settings.publicQq, '123456');
-  assert.equal(settings.autoRefresh, true);
-  assert.equal(settings.refreshIntervalMinutes, 15);
 
   const blank = createFakeBridge({ config: {}, storage: {} });
   const blankRepository = MaiProfile.createRepository(blank.bridge);
   const defaults = await blankRepository.getSettings();
-  assert.deepEqual(defaults, { publicQq: '', gatewayToken: '', autoRefresh: true, refreshIntervalMinutes: 60 });
+  assert.deepEqual(defaults, { publicQq: '', gatewayToken: '' });
 });
 
 test('卡片端只读 config 设置，免费刷新不读取令牌', async () => {
@@ -250,7 +238,7 @@ test('卡片端只读 config 设置，免费刷新不读取令牌', async () => 
   const repository = MaiProfile.createRepository(fake.bridge);
 
   const settings = await repository.getCardSettings();
-  assert.deepEqual(settings, { publicQq: '123456', autoRefresh: true, refreshIntervalMinutes: 60 });
+  assert.deepEqual(settings, { publicQq: '123456' });
 
   const profile = await repository.refreshPublic();
   assert.equal(profile.name, 'card');
@@ -584,7 +572,7 @@ test('首次填写 QQ 不沿用无所属账号的完整资料', async () => {
 
 test('设置页 bridge 没有 net 时，所有网络业务使用传入的请求函数', async () => {
   const fake = createFakeBridge({
-    config: { settings: seededSettings({ autoRefresh: false }) },
+    config: { settings: seededSettings() },
     storage: { gatewayToken: 'test-token' },
     routes: {
       [PUBLIC_URL + '123456']: jsonRoute({ nickname: '公开玩家', rating: 15000 }),
@@ -604,14 +592,4 @@ test('设置页 bridge 没有 net 时，所有网络业务使用传入的请求�
   assert.equal(prepared.images.icon, 'data:image/png;base64,dGVzdA==');
   assert.deepEqual(fake.calls.net.map(call => call.url), [PUBLIC_URL + '123456', FULL_URL, CHECKIN_URL, ICON_URL + '7.png']);
   assert.equal(fake.calls.net[1].timeoutMs, 180000);
-});
-
-test('到期判断：关闭自动刷新或资料够新时不刷新', () => {
-  const settings = seededSettings();
-  const stamp = 1_700_000_000_000;
-  assert.equal(MaiProfile.isRefreshDue(settings, { publicUpdatedAt: 0 }, stamp), true);
-  assert.equal(MaiProfile.isRefreshDue(settings, { publicUpdatedAt: stamp - 59 * 60000 }, stamp), false);
-  assert.equal(MaiProfile.isRefreshDue(settings, { publicUpdatedAt: stamp - 60 * 60000 }, stamp), true);
-  assert.equal(MaiProfile.isRefreshDue(seededSettings({ autoRefresh: false }), { publicUpdatedAt: 0 }, stamp), false);
-  assert.equal(MaiProfile.isRefreshDue(seededSettings({ publicQq: '' }), { publicUpdatedAt: 0 }, stamp), false);
 });

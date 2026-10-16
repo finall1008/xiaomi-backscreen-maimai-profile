@@ -6,9 +6,11 @@ import zipfile
 ROOT = Path(__file__).resolve().parent.parent
 manifest = json.loads((ROOT / "module.json").read_text(encoding="utf-8"))
 files = [ROOT / "module.json", ROOT / "icon.png"]
-for directory in ("card", "webroot"):
+for directory in ("card", "webroot", "background"):
     files.extend(sorted(p for p in (ROOT / directory).rglob("*") if p.is_file()))
 required = {"module.json", "card/index.html", "card/main.js", "webroot/index.html", "webroot/main.js"}
+if "background" in manifest:
+    required.add("background/main.js")
 names = {p.relative_to(ROOT).as_posix() for p in files}
 if not required <= names:
     raise SystemExit("模块缺少文件：" + ", ".join(sorted(required - names)))

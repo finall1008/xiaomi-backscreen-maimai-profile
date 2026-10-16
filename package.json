@@ -1,9 +1,11 @@
 {
   "name": "maimai-rear-profile-module",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "private": true,
   "description": "Rear Card Bridge module for maimai player profiles",
-  "engines": { "node": "^22.18.0 || >=24.11.0" },
+  "engines": {
+    "node": "^22.18.0 || >=24.11.0"
+  },
   "devDependencies": {
     "@babel/core": "8.0.7",
     "@babel/plugin-transform-async-to-generator": "8.0.1"

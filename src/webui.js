@@ -7,7 +7,7 @@
  *
  * 责任划分：
  *   设置页：保存设置、公开刷新、完整资料查询（2 Token）、签到、动态图片处理与预览。
- *   卡片：显示缓存、运行期间的免费刷新；设置页写入后调用 bridge.card.requestRefresh() 通知它。
+ *   卡片：显示缓存、下拉手动免费刷新；设置页写入后调用 bridge.card.requestRefresh() 通知它。
  */
 (function () {
   'use strict';
@@ -51,8 +51,6 @@
     dom.fullConfirm = byId('full-confirm');
     dom.setQq = byId('set-qq');
     dom.setToken = byId('set-token');
-    dom.setAuto = byId('set-auto');
-    dom.setInterval = byId('set-interval');
     dom.save = byId('save');
     dom.actionButtons = [dom.refreshPublic, dom.openFull, dom.checkIn, dom.retryAssets, dom.fullConfirm, dom.fullCancel, dom.save];
   }
@@ -109,7 +107,7 @@
     dom.actionButtons.forEach(function (button) {
       if (button) button.disabled = locked;
     });
-    [dom.setQq, dom.setToken, dom.setAuto, dom.setInterval].forEach(function (input) {
+    [dom.setQq, dom.setToken].forEach(function (input) {
       if (input) input.disabled = locked;
     });
   }
@@ -141,8 +139,6 @@
     if (dom.setQq) dom.setQq.value = settings.publicQq || '';
     // 令牌只写入输入框，不写日志、不放进页面文本。
     if (dom.setToken) dom.setToken.value = settings.gatewayToken || '';
-    if (dom.setAuto) dom.setAuto.checked = settings.autoRefresh !== false;
-    if (dom.setInterval) dom.setInterval.value = String(settings.refreshIntervalMinutes || api.defaultIntervalMinutes);
   }
 
   /* ---------- 预览组件（由构建产物提供 window.MaiRenderer） ---------- */
@@ -274,14 +270,6 @@
     return ok;
   }
 
-  async function autoRefreshIfDue() {
-    if (!state.repository) return false;
-    var settings = state.settings || (await state.repository.getSettings());
-    if (!api.isRefreshDue(settings, state.profile)) return false;
-    setStatus('正在刷新公开资料…');
-    return refreshPublic();
-  }
-
   async function refreshFull(qr) {
     return runAction('正在查询完整资料…', async function () {
       var profile = await state.repository.refreshFull(qr);
@@ -334,9 +322,7 @@
     if (state.busy || !state.repository) return false;
     var input = {
       publicQq: dom.setQq ? dom.setQq.value : '',
-      gatewayToken: dom.setToken ? dom.setToken.value : '',
-      autoRefresh: dom.setAuto ? dom.setAuto.checked : true,
-      refreshIntervalMinutes: dom.setInterval ? dom.setInterval.value : ''
+      gatewayToken: dom.setToken ? dom.setToken.value : ''
     };
     var ok = await runAction('正在保存设置…', async function () {
       var saved = await state.repository.saveSettings(input);
@@ -348,7 +334,6 @@
       renderPreview();
       await saveAndNotifySaved('设置已保存', '设置已保存，背屏通知失败');
     });
-    if (ok) await autoRefreshIfDue();
     return ok;
   }
 
@@ -448,8 +433,6 @@
         setStatus('资料加载失败');
         return;
       }
-      // 设置页打开时按到期规则自动读取公开资料（完整查询与签到始终手动）。
-      await autoRefreshIfDue();
     })();
   }
 
